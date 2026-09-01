@@ -14,7 +14,8 @@ import subprocess
 from pathlib import Path
 
 from docx import Document
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -48,6 +49,26 @@ def style(doc):
         h.paragraph_format.keep_with_next = True
 
 
+def hyperlink(paragraph, url, text, color=TEAL, size=10):
+    """python-docx has no hyperlink API, so the w:hyperlink element is built by hand.
+    LibreOffice carries these through to real link annotations in the PDF."""
+    r_id = paragraph.part.relate_to(url, RT.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), r_id)
+    run = OxmlElement("w:r")
+    props = OxmlElement("w:rPr")
+    col = OxmlElement("w:color"); col.set(qn("w:val"), f"{color:06X}" if isinstance(color, int)
+                                          else "%02X%02X%02X" % (color[0], color[1], color[2]))
+    props.append(col)
+    sz = OxmlElement("w:sz"); sz.set(qn("w:val"), str(int(size * 2))); props.append(sz)
+    u = OxmlElement("w:u"); u.set(qn("w:val"), "none"); props.append(u)   # colour carries it
+    run.append(props)
+    t = OxmlElement("w:t"); t.text = text; t.set(qn("xml:space"), "preserve")
+    run.append(t)
+    link.append(run)
+    paragraph._p.append(link)
+
+
 def para(doc, text, italic=False, size=None, color=None, after=None):
     p = doc.add_paragraph()
     r = p.add_run(text)
@@ -76,12 +97,14 @@ def table(doc, header, rows, widths=None, bold_last=False):
     t.style, t.alignment = "Light Grid Accent 1", WD_TABLE_ALIGNMENT.CENTER
     for c, name in zip(t.rows[0].cells, header):
         c.text = ""
+        c.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         r = c.paragraphs[0].add_run(name)
         r.bold, r.font.size = True, Pt(9.5)
     for i, row in enumerate(rows):
         cells = t.add_row().cells
         for c, v in zip(cells, row):
             c.text = ""
+            c.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             r = c.paragraphs[0].add_run(str(v))
             r.font.size = Pt(9.5)
             if bold_last and i == len(rows) - 1:
@@ -99,6 +122,11 @@ def table(doc, header, rows, widths=None, bold_last=False):
             for c in row.cells:
                 for pgh in c.paragraphs:
                     pgh.paragraph_format.keep_with_next = True
+    for row in t.rows:
+        for c in row.cells:
+            for pg in c.paragraphs:
+                pg.paragraph_format.space_before = Pt(3)
+                pg.paragraph_format.space_after = Pt(3)
     doc.add_paragraph().paragraph_format.space_after = Pt(2)
     return t
 
@@ -127,17 +155,19 @@ def build():
     q = doc.add_paragraph()
     r = q.add_run("Muhaiminul Islam Ninad")
     r.font.size, r.font.bold, r.font.color.rgb = Pt(11.5), True, INK
-    r = q.add_run("   ninadgns@gmail.com")
-    r.font.size, r.font.color.rgb = Pt(10), GREY
+    q.add_run("   ").font.size = Pt(10)
+    hyperlink(q, "mailto:ninadgns@gmail.com", "ninadgns@gmail.com", GREY, 10)
     q.paragraph_format.space_after = Pt(3)
-    for label, url in (("Repository", "https://github.com/ninadgns/freight-rate-prediction"),
-                       ("Video overview (3 min)",
-                        "https://www.loom.com/share/e8ee8f8b14d24f43b23024d2ccd538ba")):
+    for label, url, shown in (
+            ("Repository", "https://github.com/ninadgns/freight-rate-prediction",
+             "github.com/ninadgns/freight-rate-prediction"),
+            ("Video overview (3 min)",
+             "https://www.loom.com/share/e8ee8f8b14d24f43b23024d2ccd538ba",
+             "loom.com/share/e8ee8f8b14d24f43b23024d2ccd538ba")):
         q = doc.add_paragraph()
         a = q.add_run(f"{label}:  ")
         a.font.size, a.font.color.rgb = Pt(10), GREY
-        b = q.add_run(url)
-        b.font.size, b.font.color.rgb = Pt(10), TEAL
+        hyperlink(q, url, shown, TEAL, 10)
         q.paragraph_format.space_after = Pt(1)
 
     # ---------------------------------------------------------------- summary
