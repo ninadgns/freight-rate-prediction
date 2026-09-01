@@ -3,8 +3,8 @@
 Working notes for the Spotter ML assessment. Appended to as work proceeds.
 Everything here is reproducible with `python eda.py` (figures land in `eda_out/`).
 
-**Status:** EDA complete. Modelling not started.
-**Last updated:** 2026-09-01
+**Status:** EDA complete. Model architecture chosen and validated on replica splits.
+**Last updated:** 2026-09-02
 
 ---
 
@@ -268,7 +268,146 @@ Figure: `eda_out/04_geography_and_december.png`
 
 ---
 
-## 8. The December chart
+## 8. Model choice: measured, not assumed
+
+Two replica splits inside the training data have the *same shape* as the real task, namely
+train through day 30 of a quarter and predict days 31-91 of that same quarter, two months
+forward:
+
+| Split | Train | Holdout | Quarters fully covering the ramp |
+|---|---|---|---|
+| Q2 replica | Jan 1 - Apr 30 | May 1 - Jun 30 | Q1 only |
+| Q3 replica | Jan 1 - Jul 31 | Aug 1 - Sep 30 | Q1, Q2 |
+| *real task* | *Jan 1 - Oct 31* | *Nov 1 - Dec 31* | *Q1, Q2, Q3* |
+
+The replicas bracket the real task and are both slightly harder than it, since each has fewer
+prior quarters to learn the ramp from.
+
+### 8.1 Results
+
+All models fitted on `log($/mi)`, corrupted labels removed, same feature set.
+
+| Split | Model | MAE | RMSE | bias wk 1 | bias wk 8 |
+|---|---|---|---|---|---|
+| Q2 | GBM (with day_of_year) | 0.0216 | 0.0270 | +0.0022 | **+0.0322** |
+| Q2 | GBM (no day_of_year) | 0.0220 | 0.0274 | +0.0057 | +0.0315 |
+| Q2 | parametric (linear trend) | 0.0190 | 0.0240 | +0.0044 | +0.0040 |
+| Q2 | **hybrid** | **0.0140** | **0.0175** | +0.0022 | +0.0040 |
+| Q3 | GBM (with day_of_year) | 0.0151 | 0.0191 | -0.0004 | +0.0024 |
+| Q3 | GBM (no day_of_year) | 0.0303 | 0.0347 | +0.0256 | +0.0301 |
+| Q3 | parametric (linear trend) | 0.0196 | 0.0245 | -0.0065 | -0.0078 |
+| Q3 | **hybrid** | **0.0149** | **0.0187** | -0.0059 | -0.0096 |
+
+### 8.2 What this settles
+
+**Tree flattening is real, but its cost is not fixed.** Training covers day-of-year 1-304 and
+the holdout is 305-365, so every test row falls in the top `day_of_year` bin and inherits the
+last training days' value. The fitted curve visibly flattens: on the Q3 replica the GBM's
+Q3 quarter-end peak lands *below* its own Q2 peak, which cannot be right.
+
+The damage depends entirely on whether the underlying level is moving during the holdout:
+
+- **Q2 replica: 3.2% by week 8.** May-June was a steeply rising market, and the GBM missed all
+  of it.
+- **Q3 replica: 0.24% by week 8.** August-September was flat, so flattening cost almost
+  nothing.
+
+I had guessed 1-2%. The truth is that it varies from negligible to severe depending on the
+regime, and **which case December resembles is not knowable in advance.**
+
+**The diagnostic is bias growth, not average bias.** The GBM's bias grows into the holdout
+(+0.0022 to +0.0322 on Q2), while parametric and hybrid stay flat (+0.0044 to +0.0040). Average
+bias hides this. December is the far end of the holdout, so bias growth is exactly what hurts.
+
+**Dropping `day_of_year` is worse than flattening it.** Q3 bias +0.0292 versus +0.0015. The
+feature carries the seasonal baseline; freezing it beats not having it.
+
+**The linear trend alone over-extrapolates.** Parametric bias is -0.0075 on Q3, so a naive
+straight line overshoots.
+
+### 8.3 Going further: structure beats capacity
+
+The plain hybrid was not the end of it. Adding the structure the EDA had already established
+improves it consistently:
+
+1. **Linear splines** on `log(distance)`, `weight` and the quarter-end ramp. All three are known
+   to be nonlinear. Linear beyond the outer knots, so `day_of_year` extrapolation is unaffected.
+2. **Explicit shrunk city effects.** One symmetric premium per city applied at both ends
+   (section 7.1), empirical-Bayes shrunk, with kNN-on-lat/lon fallback for the 8 cities absent
+   from training. The GBM otherwise has to rediscover this through coordinate splits.
+3. **Explicit shrunk lane effects**, weighted by lane volume (section 7.4).
+
+| Split | plain hybrid MAE | structured MAE | gain |
+|---|---|---|---|
+| Q2 replica | 0.0140 | **0.0126** | 10% |
+| Q3 replica | 0.0149 | **0.0136** | 9% |
+
+### 8.4 Three things that did *not* work
+
+Recorded because the negative results are as load-bearing as the positive ones.
+
+**Tuning the trend window made it worse.** Since the baseline is not linear (it climbs Jan-Jul,
+plateaus Jul-Sep, then steps up in October), a trend fitted on recent history rather than all
+history looked promising: full-year slope is +0.56%/30d, last-60-days is +1.61%/30d, a ~2%
+disagreement over a two-month horizon. Tested on **five** rolling-origin folds, each predicting
+two months forward, because two replicas is far too thin to tune on:
+
+| Variant | mean MAE | mean abs bias (late) | worst bias |
+|---|---|---|---|
+| **joint linear day_of_year** | **0.0140** | **0.0100** | **0.0180** |
+| window 90d, damp 1.0 | 0.0153 | 0.0120 | 0.0213 |
+| window 120d, damp 1.0 | 0.0156 | 0.0130 | 0.0201 |
+| window 180d / all, damped | 0.0172-0.0188 | 0.0166-0.0202 | 0.0256-0.0269 |
+
+The joint fit wins on every metric, and it is the only variant whose bias alternates sign
+across folds rather than being systematically positive. Estimating the trend separately from
+the ramp prevents the two from co-adjusting, and every two-stage variant under-predicts.
+
+**More GBM capacity hurts.** On the Q3 replica: 200 trees 0.0136, 400 trees 0.0138, depth 7
+0.0139, 800 trees at lr 0.03 0.0138.
+
+**The GBM itself is now nearly redundant.** Once the structure is explicit it adds 0.0002 MAE,
+about 1.4%, consistent across all five folds but marginal:
+
+| cut | no GBM | + GBM |
+|---|---|---|
+| May-Jun | 0.0129 | 0.0126 |
+| Jun-Jul | 0.0133 | 0.0131 |
+| Jul-Aug | 0.0166 | 0.0164 |
+| Aug-Sep | 0.0136 | 0.0136 |
+| Sep-Oct | 0.0137 | 0.0136 |
+| **mean** | **0.0140** | **0.0139** |
+
+So roughly 99% of the performance comes from the explicit specification, not the trees. The
+final model is essentially a well-specified GLM with shrunk fixed effects, plus a thin
+gradient-boosted correction.
+
+### 8.5 How close to the floor?
+
+Fitting in-sample with *saturated* lane fixed effects, an optimistic bound, leaves residual sd
+0.0142. Holdout MAE of 0.0136 implies sd about 0.0170. So the model sits within roughly 20% of
+a bound that is itself optimistic.
+
+Remaining error is concentrated in three places, none of which look reducible with this data:
+
+- **~1% bias at the December-equivalent horizon**, alternating sign across folds. This is trend
+  uncertainty about an unobservable future.
+- **12.2% of validation rows on unseen lanes**, which get no lane effect.
+- **~0.6% floor on the 8 unseen cities**, the part of their premium coordinates cannot recover.
+
+### 8.6 Decision
+
+Structured model: splines + shrunk city effects + shrunk lane effects + joint linear trend +
+quarter-end ramp with equipment interaction, then a thin GBM on the residual with
+`day_of_year` withheld.
+
+Scripts: `experiments/gbm_extrapolation.py`, `replica_splits.py`, `model_v2.py`,
+`trend_choice.py`, `rolling_origin.py`. Figure: `eda_out/06_gbm_extrapolation.png`.
+Still numpy/pandas/matplotlib only.
+
+---
+
+## 8b. The December chart
 
 Fixed inputs: Lexington to Fort Wayne, 360 mi, Dry Van, 32,000 lb. Only the date varies.
 
@@ -296,8 +435,8 @@ Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
 ## 9. Modelling decisions carried forward
 
 - [ ] **Drop `quote_signal`.** Not gated, not row-wise, dropped.
-- [ ] **Time-based split.** Hold out Aug and Oct as degraded-regime proxies for validation.
-      Never random CV.
+- [ ] **Time-based split.** Use the Q2 and Q3 replicas (section 8), which reproduce the real
+      task's shape. Never random CV.
 - [ ] **Filter 677 corrupted labels** at 5 sigma before training.
 - [ ] **Repair on the inference path**: `abs()` on weight, same-day mean for `market_index`.
 - [ ] **Explicit calendar features**: day-of-quarter ramp, day-of-year trend, and the
@@ -305,6 +444,8 @@ Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
 - [ ] **Geography via lat/lon**, not city-name encodings. One symmetric city premium,
       driven by latitude. Local interpolation recovers ~89% of it for unseen cities.
 - [ ] **Model `log(rate/mile)`**, not raw rate, given the multiplicative structure throughout.
+- [ ] **Structured model**: splines + shrunk city and lane effects + joint linear trend.
+      The GBM stage is worth only ~1.4%. See section 8.
 - [ ] Validate the December curve is rising, roughly $840 to $900.
 
 ## 10. Open questions
@@ -322,6 +463,13 @@ Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
 - **2026-09-01** Section 7 expanded: origin and destination premiums shown to be the same
   symmetric city effect (corr 0.992), driven by latitude alone; leave-one-city-out kNN
   quantifies what is recoverable for the 8 unseen cities.
+- **2026-09-02** Sections 8.3-8.6 added: structured model beats the plain hybrid by ~10%.
+  Trend-window tuning and extra GBM capacity both tested and rejected; the GBM stage turns out
+  to be worth only 1.4% once structure is explicit. Model is within ~20% of an optimistic
+  noise floor.
+- **2026-09-02** Section 8 added: replica-split evaluation of four model architectures.
+  Corrects an earlier guess that tree flattening would cost 1-2%; measured cost ranges from
+  0.24% to 3.2% depending on regime. Hybrid chosen on evidence.
 - **2026-09-01** Section 7.1 re-derived with joint origin/destination fixed effects after the
   marginal-average method was questioned. Confirms a load pays the full premium at both ends
   (slopes 1.013 / 1.015) and that the effect is direction-symmetric. Section 7.4 now
