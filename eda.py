@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -69,10 +70,12 @@ def fig_target(train, resid, sigma):
     ax[1].hist(rpm, bins=np.linspace(0, 8, 160), color="#064A56")
     ax[1].set(title="rate per mile: tight core, two outlier lobes", xlabel="$/mi")
     z = resid / sigma
-    ax[2].hist(z, bins=np.linspace(-20, 20, 160), color="#064A56")
+    # Clipped so the two corrupted lobes, which run past |z|=50, land in the edge bins.
+    ax[2].hist(z.clip(-40, 40), bins=np.linspace(-40, 40, 161), color="#064A56")
     for c in (-5, 5):
         ax[2].axvline(c, color="#C2453B", ls="--", lw=1.2)
-    ax[2].set(title=f"structural residual (z): {(z.abs() > 5).sum()} corrupted labels", xlabel="z", yscale="log")
+    ax[2].set(title=f"structural residual: {(z.abs() > 5).sum()} corrupted labels\nsit past a clean empty gap at |z|=5",
+              xlabel="z (clipped to +/-40)", yscale="log")
     fig.tight_layout()
     fig.savefig(OUT / "01_target_and_outliers.png", dpi=140)
     plt.close(fig)
@@ -120,27 +123,37 @@ def fig_structure(train, resid):
     ax[0].set(title="$/mi falls with length of haul", xlabel="miles", ylabel="$/mi", xscale="log")
     ax[0].legend()
 
-    r = resid.loc[core.index]
-    q = pd.qcut(core["market_index"], 12)
-    ax[1].plot([i.mid for i in q.cat.categories], r.groupby(q, observed=False).mean(),
-               marker="o", color="#064A56")
-    ax[1].axhline(0, color="#9DAFB3", lw=0.8)
-    ax[1].set(title="market_index moves rate (elasticity ~0.13 in logs)", xlabel="market_index",
-              ylabel="log residual")
-
-    # Residual with the market/calendar terms removed, to expose the raw seasonal shape.
+    # Base model deliberately excludes market_index and the calendar terms, so the
+    # next two panels show those effects rather than what is left after removing them.
     ld = np.log(core["distance"])
     base = np.column_stack([ld, ld ** 2, core["weight"] / 10_000,
                             (core["equipment"] == "Flatbed").astype(float),
                             (core["equipment"] == "Reefer").astype(float), np.ones(len(core))])
     y = np.log(rpm)
     bb, *_ = np.linalg.lstsq(base, y, rcond=None)
-    raw = pd.Series(y - base @ bb, index=core.index).groupby(core["date"]).mean()
-    ax[2].plot(raw.index, raw.rolling(7, center=True).mean(), color="#064A56", lw=2)
+    raw = pd.Series(y - base @ bb, index=core.index)
+
+    q = pd.qcut(core["market_index"], 12)
+    mid = [i.mid for i in q.cat.categories]
+    ax[1].plot(mid, raw.groupby(q, observed=False).mean(), marker="o", color="#064A56",
+               label="observed")
+    slope = np.polyfit(core["market_index"], raw, 1)
+    ax[1].plot(mid, np.polyval(slope, mid), color="#C2453B", ls="--",
+               label=f"slope {slope[0]:.3f}/unit")
+    ax[1].set(title="market_index moves rate", xlabel="market_index", ylabel="log residual")
+    ax[1].legend()
+
+    # Net of market_index, what is left is pure calendar: trend plus quarter-end ramp.
+    net = pd.Series(raw - np.polyval(slope, core["market_index"]), index=core.index)
+    for series, c, lab in ((raw, "#9DAFB3", "before market_index"),
+                           (net, "#064A56", "net of market_index")):
+        d = series.groupby(core["date"]).mean().rolling(7, center=True).mean()
+        ax[2].plot(d.index, d.values, color=c, lw=2, label=lab)
     for q_start in pd.to_datetime(["2025-04-01", "2025-07-01", "2025-10-01"]):
         ax[2].axvline(q_start, color="#C2453B", ls="--", lw=1)
-    ax[2].set(title="seasonality: rising trend + quarter-end ramp (red = quarter start)",
+    ax[2].set(title="calendar: rising trend + quarter-end ramp\n(dashed = quarter start)",
               ylabel="log residual")
+    ax[2].legend(fontsize=8)
     ax[2].tick_params(axis="x", rotation=30)
     fig.tight_layout()
     fig.savefig(OUT / "03_rate_structure.png", dpi=140)
@@ -164,22 +177,66 @@ def fig_geo_and_december(train, val, resid):
     ax[0].scatter(u["pickup_lon"], u["pickup_lat"], marker="x", s=90, color="#000",
                   label="8 cities absent from train")
     fig.colorbar(sc, ax=ax[0], label="origin premium (log)")
-    ax[0].set(title="origin premium is a smooth latitude gradient", xlabel="lon", ylabel="lat")
+    ax[0].set(title="origin premium is a smooth geographic\ngradient, so lat/lon covers unseen cities",
+              xlabel="lon", ylabel="lat")
     ax[0].legend(loc="lower left", fontsize=8)
 
     mi = pd.concat([train, val]).groupby("date")["market_index"].mean()
     ax[1].plot(mi.index, mi.values, color="#064A56", lw=0.9)
     ax[1].axvline(pd.Timestamp("2025-11-01"), color="#C2453B", ls="--")
-    ax[1].set(title="market_index: known through Dec 31 via validation.csv", ylabel="market_index")
+    ax[1].set(title="market_index is known through Dec 31\n(validation.csv carries it)", ylabel="market_index")
     ax[1].tick_params(axis="x", rotation=30)
 
     dec = val[val["date"] >= "2025-12-01"].groupby("date")["market_index"].mean()
     ax[2].plot(dec.index, dec.values, marker="o", ms=3, color="#064A56")
-    ax[2].set(title="December market_index: weekly sawtooth drives the chart's wiggle",
-              ylabel="market_index")
+    ax[2].set(title="December market_index: a weekly sawtooth\n(this is the chart's wiggle)", ylabel="market_index")
     ax[2].tick_params(axis="x", rotation=35)
     fig.tight_layout()
     fig.savefig(OUT / "04_geography_and_december.png", dpi=140)
+    plt.close(fig)
+
+
+def fig_equipment_ramp(train, val):
+    """The equipment premium is flat for 60 days then ramps to quarter end.
+
+    December is the only quarter-end month with no labels, so this interaction has
+    to be extrapolated rather than learned in place.
+    """
+    core = train[np.abs(np.log(train["posted_rate"] / train["distance"])
+                        - np.log(2.2)) < 0.5].copy()
+    y = np.log(core["posted_rate"] / core["distance"])
+    ld = np.log(core["distance"])
+    base = np.column_stack([ld, ld ** 2, core["weight"] / 10_000, core["market_index"],
+                            core["pickup_lat"] / 10, core["delivery_lat"] / 10,
+                            core["doy"] / 100, np.ones(len(core))])
+    dv = core["equipment"] == "Dry Van"
+    beta, *_ = np.linalg.lstsq(base[dv.values], y[dv], rcond=None)   # Dry Van sets the baseline
+    core["prem"] = y - base @ beta
+
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
+    edges = [-1, 9, 19, 29, 39, 49, 59, 69, 74, 79, 84, 92]
+    b = pd.cut(core["doq"], edges)
+    for eq, c in (("Dry Van", "#064A56"), ("Flatbed", "#C58A22"), ("Reefer", "#1B7A4B")):
+        m = core["equipment"] == eq
+        ax[0].plot([i.mid for i in b.cat.categories],
+                   core.loc[m, "prem"].groupby(b[m], observed=False).mean(),
+                   marker="o", color=c, label=eq)
+    ax[0].axvspan(60, 92, color="#C2453B", alpha=0.08)
+    ax[0].set(title="equipment premium is flat for 60 days,\nthen ramps into quarter end",
+              xlabel="day of quarter", ylabel="premium over Dry Van (log)")
+    ax[0].legend(fontsize=8)
+
+    # Q4's ramp region is exactly December, and it carries no labels.
+    cov = pd.concat([train.assign(src="train"), val.assign(src="validation")])
+    for src, c, m in (("train", "#064A56", "o"), ("validation", "#C2453B", "x")):
+        d = cov[cov["src"] == src]
+        ax[1].scatter(d["doq"], d["date"].dt.quarter, s=2, color=c, marker=m, label=src)
+    ax[1].axvspan(60, 92, color="#C2453B", alpha=0.08)
+    ax[1].set(title="the ramp is only ever labelled in Q1-Q3;\nQ4's ramp is December",
+              xlabel="day of quarter", ylabel="quarter", yticks=[1, 2, 3, 4])
+    ax[1].legend(fontsize=8, markerscale=4)
+    fig.tight_layout()
+    fig.savefig(OUT / "05_equipment_quarter_end.png", dpi=140)
     plt.close(fig)
 
 
@@ -215,6 +272,7 @@ def main():
     fig_quote_signal(train, val)
     fig_structure(train, resid)
     fig_geo_and_december(train, val, resid)
+    fig_equipment_ramp(train, val)
     report(raw_train, raw_val, resid, sigma)
     print(f"figures written to {OUT}/")
 
