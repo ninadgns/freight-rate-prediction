@@ -3,12 +3,33 @@
 Working notes for the Spotter ML assessment. Appended to as work proceeds.
 Everything here is reproducible with `python eda.py` (figures land in `eda_out/`).
 
-**Status:** Model built, both prediction files generated, report written. Loom outstanding.
+**Status:** Complete. Model built, both prediction files generated, report written.
 **Last updated:** 2026-09-02
 
 ---
 
+
+
+## Contents
+
+1. [The task in one line](#1-the-task-in-one-line)
+2. [Headline conclusions](#2-headline-conclusions)
+3. [Data quality](#3-data-quality)
+4. [Structure of the rate](#4-structure-of-the-rate)
+5. [Trap 1: `quote_signal` is regime-switched](#5-trap-1-quotesignal-is-regime-switched)
+6. [Trap 2: equipment premium ramps into quarter end](#6-trap-2-equipment-premium-ramps-into-quarter-end)
+7. [Geography: one city premium, applied at both ends](#7-geography-one-city-premium-applied-at-both-ends)
+8. [Model choice: measured, not assumed](#8-model-choice-measured-not-assumed)
+9. [Freight domain seasonality: produce season and retail peak](#9-freight-domain-seasonality-produce-season-and-retail-peak)
+10. [Final model and results](#10-final-model-and-results)
+11. [The December chart](#11-the-december-chart)
+12. [Modelling decisions carried forward](#12-modelling-decisions-carried-forward)
+13. [Open questions](#13-open-questions)
+
+---
+
 ## 1. The task in one line
+
 
 Predict `posted_rate` for 12,000 unlabelled loads (`validation.csv`, 2025-11-01 to 2025-12-31)
 from 48,000 labelled loads (`train-test.csv`, 2025-01-01 to 2025-10-31), plus a 31-row
@@ -21,6 +42,7 @@ misleading here for reasons in section 5.
 
 ## 2. Headline conclusions
 
+
 | # | Finding | Consequence |
 |---|---|---|
 | 1 | `quote_signal` is a near-perfect copy of the target in 5 of 10 training months and worthless in the other 5. Validation sits in the worthless regime. | Drop it. It is the single biggest way to fail this assessment. |
@@ -32,6 +54,7 @@ misleading here for reasons in section 5.
 ---
 
 ## 3. Data quality
+
 
 ### 3.1 Corrupted labels (677 rows, 1.41%)
 
@@ -83,6 +106,7 @@ extrapolated from a training trend.
 
 ## 4. Structure of the rate
 
+
 A 9-term linear model on `log($/mi)` reaches R2 = 0.90 with sigma = 3.2%, so the signal is
 mostly low-dimensional. Adding the equipment-by-quarter-end interaction (section 6) takes
 sigma to 2.38%.
@@ -105,6 +129,7 @@ Figure: `eda_out/03_rate_structure.png`
 ---
 
 ## 5. Trap 1: `quote_signal` is regime-switched
+
 
 `quote_signal` equals the target's rate-per-mile, but only in some months.
 
@@ -148,6 +173,7 @@ Figure: `eda_out/02_quote_signal_regime.png`
 
 ## 6. Trap 2: equipment premium ramps into quarter end
 
+
 Fitting the model independently per month, distance, weight, and lat/lon coefficients are
 stable to within a few percent. **Equipment is not.** Flatbed and Reefer premiums jump in
 March, June, and September, and only those months.
@@ -184,6 +210,7 @@ Figure: `eda_out/05_equipment_quarter_end.png`
 ---
 
 ## 7. Geography: one city premium, applied at both ends
+
 
 ### 7.1 A load pays the premium at BOTH ends, additively
 
@@ -269,6 +296,7 @@ Figure: `eda_out/04_geography_and_december.png`
 ---
 
 ## 8. Model choice: measured, not assumed
+
 
 Two replica splits inside the training data have the *same shape* as the real task, namely
 train through day 30 of a quarter and predict days 31-91 of that same quarter, two months
@@ -407,73 +435,8 @@ Still numpy/pandas/matplotlib only.
 
 ---
 
-## 8b. The December chart
+## 9. Freight domain seasonality: produce season and retail peak
 
-Fixed inputs: Lexington to Fort Wayne, 360 mi, Dry Van, 32,000 lb. Only the date varies.
-
-Three things drive the shape:
-
-1. **Quarter-end ramp.** All of December sits at day-of-quarter 61-91, inside the ramp.
-   Roughly +3.4% across the month.
-2. **Linear trend.** +0.62%/30d.
-3. **`market_index` weekly sawtooth.** Already known for every December date, because
-   `validation.csv` covers Nov 1 to Dec 31. No forecasting needed. Thursday peaks ~1.03,
-   Sunday troughs ~0.83, which at elasticity 0.131 is a +/- 1.3% ripple.
-
-Back-of-envelope from the structural model: **$837 on Dec 1 rising to $900 on Dec 31 (+7.5%)**,
-with a weekly ripple. Sanity anchor: the 32 real Lexington to Fort Wayne loads in training
-span $758-974 (mean $857) across Jan-Oct.
-
-**A flat December line means the time structure was missed.** That chart is the qualitative
-test in this assessment.
-
-Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
-(+0.021, +0.022, +0.016 at day 84-92 for Q1, Q2, Q3), which is real uncertainty for Q4.
-
----
-
-## 8c. Final model and results
-
-`model.py` backtests, fits on all of Jan-Oct, and writes both prediction files.
-
-| Fold | n test | MAE (log) | RMSE (log) | MAPE | bias, last 2wk |
-|---|---|---|---|---|---|
-| Q2 replica (May-Jun) | 9,571 | 0.0126 | 0.0158 | 1.26% | +0.0034 |
-| Jun-Jul | 9,567 | 0.0131 | 0.0164 | 1.31% | -0.0093 |
-| Jul-Aug | 9,538 | 0.0163 | 0.0201 | 1.65% | -0.0176 |
-| Q3 replica (Aug-Sep) | 9,297 | 0.0137 | 0.0172 | 1.38% | -0.0106 |
-| Sep-Oct | 9,379 | 0.0137 | 0.0170 | 1.36% | +0.0113 |
-| **mean** | | **0.0139** | | **1.39%** | |
-
-Trained on 47,323 rows after removing 677 corrupted labels. In-sample residual sd 0.0145.
-
-### Sanity checks on the output
-
-| Check | Result |
-|---|---|
-| predicted rate distribution | median $2,072 vs $2,031 in training; p05/p95 $628/$4,985 vs $600/$4,954 |
-| predicted $/mi | median 2.177 vs 2.145 in training |
-| Dec vs Nov $/mi | 2.206 vs 2.146, i.e. +2.8%, the quarter-end ramp |
-| equipment premium, Nov (pre-ramp) | Flatbed +7.1%, Reefer +12.0% |
-| equipment premium, Dec (in ramp) | Flatbed +10.3%, Reefer +13.9% |
-| the 8 unseen cities | $/mi median 2.181 vs 2.177 for the rest, no outlier behaviour |
-| format | 12,000 unique ids, all positive, no NaN; scorer passes |
-
-The November and December equipment premia land on the values measured in section 6, which
-confirms the quarter-end interaction is being applied rather than merely declared.
-
-### The December chart
-
-$832 on Dec 1 rising to $885 on Dec 31, **+6.3%** across the month, with a weekly ripple from
-the `market_index` sawtooth. Close to the section 8b back-of-envelope of $837 to $900, and
-inside the $758-974 range of the 32 real Lexington to Fort Wayne loads in training.
-
-The line rises because December sits entirely inside the quarter-end ramp. A flat line would
-have meant the time structure was missed.
-
----
-
-## 8d. Freight domain seasonality: produce season and retail peak
 
 Checked because the calendar work so far was mechanical (quarter-end, trend, weekly) and never
 tested the named industry seasons directly.
@@ -538,7 +501,76 @@ trend misspecification noted in section 8.4 rather than any seasonal story.
 
 ---
 
-## 9. Modelling decisions carried forward
+## 10. Final model and results
+
+
+`model.py` backtests, fits on all of Jan-Oct, and writes both prediction files.
+
+| Fold | n test | MAE (log) | RMSE (log) | MAPE | bias, last 2wk |
+|---|---|---|---|---|---|
+| Q2 replica (May-Jun) | 9,571 | 0.0126 | 0.0158 | 1.26% | +0.0034 |
+| Jun-Jul | 9,567 | 0.0131 | 0.0164 | 1.31% | -0.0093 |
+| Jul-Aug | 9,538 | 0.0163 | 0.0201 | 1.65% | -0.0176 |
+| Q3 replica (Aug-Sep) | 9,297 | 0.0137 | 0.0172 | 1.38% | -0.0106 |
+| Sep-Oct | 9,379 | 0.0137 | 0.0170 | 1.36% | +0.0113 |
+| **mean** | | **0.0139** | | **1.39%** | |
+
+Trained on 47,323 rows after removing 677 corrupted labels. In-sample residual sd 0.0145.
+
+### Sanity checks on the output
+
+| Check | Result |
+|---|---|
+| predicted rate distribution | median $2,072 vs $2,031 in training; p05/p95 $628/$4,985 vs $600/$4,954 |
+| predicted $/mi | median 2.177 vs 2.145 in training |
+| Dec vs Nov $/mi | 2.206 vs 2.146, i.e. +2.8%, the quarter-end ramp |
+| equipment premium, Nov (pre-ramp) | Flatbed +7.1%, Reefer +12.0% |
+| equipment premium, Dec (in ramp) | Flatbed +10.3%, Reefer +13.9% |
+| the 8 unseen cities | $/mi median 2.181 vs 2.177 for the rest, no outlier behaviour |
+| format | 12,000 unique ids, all positive, no NaN; scorer passes |
+
+The November and December equipment premia land on the values measured in section 6, which
+confirms the quarter-end interaction is being applied rather than merely declared.
+
+### The December chart
+
+$832 on Dec 1 rising to $885 on Dec 31, **+6.3%** across the month, with a weekly ripple from
+the `market_index` sawtooth. Close to the section 11 back-of-envelope of $837 to $900, and
+inside the $758-974 range of the 32 real Lexington to Fort Wayne loads in training.
+
+The line rises because December sits entirely inside the quarter-end ramp. A flat line would
+have meant the time structure was missed.
+
+---
+
+## 11. The December chart
+
+
+Fixed inputs: Lexington to Fort Wayne, 360 mi, Dry Van, 32,000 lb. Only the date varies.
+
+Three things drive the shape:
+
+1. **Quarter-end ramp.** All of December sits at day-of-quarter 61-91, inside the ramp.
+   Roughly +3.4% across the month.
+2. **Linear trend.** +0.62%/30d.
+3. **`market_index` weekly sawtooth.** Already known for every December date, because
+   `validation.csv` covers Nov 1 to Dec 31. No forecasting needed. Thursday peaks ~1.03,
+   Sunday troughs ~0.83, which at elasticity 0.131 is a +/- 1.3% ripple.
+
+Back-of-envelope from the structural model: **$837 on Dec 1 rising to $900 on Dec 31 (+7.5%)**,
+with a weekly ripple. Sanity anchor: the 32 real Lexington to Fort Wayne loads in training
+span $758-974 (mean $857) across Jan-Oct.
+
+**A flat December line means the time structure was missed.** That chart is the qualitative
+test in this assessment.
+
+Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
+(+0.021, +0.022, +0.016 at day 84-92 for Q1, Q2, Q3), which is real uncertainty for Q4.
+
+---
+
+## 12. Modelling decisions carried forward
+
 
 - [x] **Drop `quote_signal`.** Not gated, not row-wise, dropped.
 - [x] **Time-based split.** Use the Q2 and Q3 replicas (section 8), which reproduce the real
@@ -554,7 +586,10 @@ trend misspecification noted in section 8.4 rather than any seasonal story.
       The GBM stage is worth only ~1.4%. See section 8.
 - [x] Validate the December curve is rising, roughly $840 to $900.
 
-## 10. Open questions
+---
+
+## 13. Open questions
+
 
 - Does the Q4 ramp match Q1-Q3 in magnitude? Unobservable. Q1-Q3 spread is 0.016-0.022 for
   Dry Van, so there is irreducible uncertainty in the December level.
@@ -564,6 +599,7 @@ trend misspecification noted in section 8.4 rather than any seasonal story.
 ---
 
 ## Changelog
+
 
 - **2026-09-01** EDA complete. Both traps identified and characterized. Sections 1-10 written.
 - **2026-09-01** Section 7 expanded: origin and destination premiums shown to be the same
