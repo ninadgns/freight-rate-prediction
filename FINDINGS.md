@@ -46,7 +46,7 @@ misleading here for reasons in section 5.
 | # | Finding | Consequence |
 |---|---|---|
 | 1 | `quote_signal` is a near-perfect copy of the target in 5 of 10 training months and worthless in the other 5. Validation sits in the worthless regime. | Drop it. It is the single biggest way to fail this assessment. |
-| 2 | Equipment premiums are flat for 60 days of a quarter then ramp hard into quarter end. Q4's ramp region is exactly December and is never labelled. | Needs an explicit day-of-quarter feature, otherwise December is underpriced. |
+| 2 | Equipment premiums are flat for the first two months of a quarter then ramp hard into quarter end. Q4's ramp region is exactly December and is never labelled. | Needs an explicit day-of-quarter feature, otherwise December is underpriced. |
 | 3 | 677 labels (1.41%) are multiplicatively corrupted, cleanly separable at 5 sigma. | Filter before training. |
 | 4 | 8 cities appear only in validation, touching 12.1% of rows. | Use lat/lon, not city-name encodings. |
 | 5 | Validation is about twice as dirty as training, as a discrete step. | Cleaning must run on the inference path and be robust, not tuned. |
@@ -178,9 +178,9 @@ Fitting the model independently per month, distance, weight, and lat/lon coeffic
 stable to within a few percent. **Equipment is not.** Flatbed and Reefer premiums jump in
 March, June, and September, and only those months.
 
-The cause: the equipment premium is flat for the first 60 days of a quarter, then ramps.
+The cause: the equipment premium is flat for the first two months of a quarter, then ramps.
 
-| | day 0-59 | day 84-92 |
+| | first two months | final week |
 |---|---|---|
 | Flatbed premium | +0.068 | **+0.140** |
 | Reefer premium | +0.113 | **+0.160** |
@@ -191,11 +191,11 @@ It repeats identically in Q1, Q2, Q3. Adding this one interaction cuts residual 
 
 ### Why this is a trap
 
-**Q4's ramp region is never labelled.** Training stops Oct 31, which is day 30 of Q4. The
+**Q4's ramp region is never labelled.** Training stops 31 October, one month into Q4. The
 split falls exactly on the boundary:
 
-- **November** = days 31-60 of Q4, entirely *before* the ramp
-- **December** = days 61-91, entirely *inside* it
+- **November** = Q4's second month, entirely *before* the ramp
+- **December** = Q4's final month, entirely *inside* it
 
 So half the validation set tests the base model and the other half tests an extrapolation
 into a region with zero training coverage. Without an explicit day-of-quarter feature, roughly
@@ -299,7 +299,7 @@ Figure: `eda_out/04_geography_and_december.png`
 
 
 Two replica splits inside the training data have the *same shape* as the real task, namely
-train through day 30 of a quarter and predict days 31-91 of that same quarter, two months
+train through the first month of a quarter and predict the remaining two, two months
 forward:
 
 | Split | Train | Holdout | Quarters fully covering the ramp |
@@ -550,7 +550,7 @@ Fixed inputs: Lexington to Fort Wayne, 360 mi, Dry Van, 32,000 lb. Only the date
 
 Three things drive the shape:
 
-1. **Quarter-end ramp.** All of December sits at day-of-quarter 61-91, inside the ramp.
+1. **Quarter-end ramp.** All of December sits inside the ramp, being Q4's final month.
    Roughly +3.4% across the month.
 2. **Linear trend.** +0.62%/30d.
 3. **`market_index` weekly sawtooth.** Already known for every December date, because
@@ -565,7 +565,7 @@ span $758-974 (mean $857) across Jan-Oct.
 test in this assessment.
 
 Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
-(+0.021, +0.022, +0.016 at day 84-92 for Q1, Q2, Q3), which is real uncertainty for Q4.
+(+0.021, +0.022, +0.016 in the final week of Q1, Q2, Q3), which is real uncertainty for Q4.
 
 ---
 

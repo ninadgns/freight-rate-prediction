@@ -59,8 +59,8 @@ real task's horizon:
 | Sep-Oct | 0.0137 | 0.0170 | 1.36% |
 | **mean** | **0.0139** | | **1.39%** |
 
-The two "replica" folds match the real task's shape exactly: train through day 30 of a
-quarter, predict days 31-91 of that same quarter. No random cross-validation is used
+The two "replica" folds match the real task's shape exactly: train through the first month
+of a quarter, then predict the remaining two. No random cross-validation is used
 anywhere, for reasons in the next section.
 
 ## The two things that decide this problem
@@ -75,7 +75,7 @@ gating on agreement with a model prediction leaves error unchanged.
 
 **The equipment premium ramps into quarter end, and Q4's ramp is never labelled.** Flatbed
 goes from +0.068 to +0.140 and Reefer from +0.113 to +0.160 over the last 30 days of a
-quarter, repeating identically in Q1, Q2 and Q3. Training stops on Oct 31, day 30 of Q4, so
+quarter, repeating identically in Q1, Q2 and Q3. Training stops on 31 October, one month into Q4, so
 November falls entirely before the ramp and December entirely inside it. Half the holdout is
 therefore an extrapolation into a region with no training coverage, which needs an explicit
 day-of-quarter feature rather than a feature to drop. Modelling it cuts residual sigma by 26%.

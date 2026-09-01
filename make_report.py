@@ -187,14 +187,14 @@ def build():
     para(doc, "Fitting the model separately per month, distance, weight and coordinates are "
               "stable to within a few percent. Equipment is not: Flatbed and Reefer premiums "
               "jump in March, June and September, and only those months. The cause is that "
-              "the equipment premium is flat for the first 60 days of a quarter and then ramps.")
-    table(doc, ["", "Day 0-59", "Day 84-92"],
+              "the equipment premium is flat for the first two months of a quarter and then ramps.")
+    table(doc, ["", "first two months", "final week"],
           [["Flatbed premium", "+0.068", "+0.140"],
            ["Reefer premium", "+0.113", "+0.160"],
            ["Dry Van (general ramp)", "0.000", "+0.022"]], widths=[2.6, 2.1, 2.1])
     para(doc, "It repeats identically in Q1, Q2 and Q3, and modelling it cuts residual sigma "
               "from 0.0321 to 0.0238, a 26% reduction.")
-    para(doc, "The trap is coverage. Training stops on 31 October, day 30 of Q4, so November "
+    para(doc, "The trap is coverage. Training stops on 31 October, one month into Q4, so November "
               "falls entirely before the ramp and December entirely inside it. Half the "
               "holdout is an extrapolation into a region with no training coverage. Unlike "
               "quote_signal this is not leakage, so the response is an explicit "
@@ -204,8 +204,8 @@ def build():
 
     # ------------------------------------------------- validation and the split
     doc.add_heading("4. Validation approach and data split", level=1)
-    para(doc, "The real task trains through day 30 of a quarter and predicts days 31 to 91 of "
-              "that same quarter, two months forward. That exact shape occurs twice inside the "
+    para(doc, "The real task trains through the first month of a quarter and predicts the "
+              "remaining two. That exact shape occurs twice inside the "
               "training data, so the split is not a generic time cut but a structural replica "
               "of the task:")
     table(doc, ["Split", "Train", "Holdout", "Quarters covering the ramp"],
@@ -301,8 +301,8 @@ def build():
     para(doc, "The rate rises from $832 on 1 December to $885 on 31 December, up 6.3% across "
               "the month, with a weekly ripple.")
     bullets(doc, [
-        ("The rise ", "is the quarter-end ramp. December sits entirely at days 61 to 91 of "
-         "Q4, inside the ramp region that Q4 itself never labels."),
+        ("The rise ", "is the quarter-end ramp. December is Q4's final month, sitting entirely "
+         "inside the ramp region that Q4 itself never labels."),
         ("The ripple ", "is the market_index weekly cycle, peaking Thursday near 1.03 and "
          "troughing Sunday near 0.83, which at an elasticity of 0.131 is roughly a 1.3% swing."),
     ])
