@@ -131,7 +131,7 @@ def build():
     r.font.size, r.font.color.rgb = Pt(10), GREY
     q.paragraph_format.space_after = Pt(3)
     for label, url in (("Repository", "https://github.com/ninadgns/freight-rate-prediction"),
-                       ("Walkthrough",
+                       ("Video overview (3 min)",
                         "https://www.loom.com/share/e8ee8f8b14d24f43b23024d2ccd538ba")):
         q = doc.add_paragraph()
         a = q.add_run(f"{label}:  ")
