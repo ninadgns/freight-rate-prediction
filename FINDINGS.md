@@ -3,7 +3,7 @@
 Working notes for the Spotter ML assessment. Appended to as work proceeds.
 Everything here is reproducible with `python eda.py` (figures land in `eda_out/`).
 
-**Status:** EDA complete. Model architecture chosen and validated on replica splits.
+**Status:** Model built and both prediction files generated. Report and Loom outstanding.
 **Last updated:** 2026-09-02
 
 ---
@@ -432,21 +432,62 @@ Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
 
 ---
 
+## 8c. Final model and results
+
+`model.py` backtests, fits on all of Jan-Oct, and writes both prediction files.
+
+| Fold | n test | MAE (log) | RMSE (log) | MAPE | bias, last 2wk |
+|---|---|---|---|---|---|
+| Q2 replica (May-Jun) | 9,571 | 0.0126 | 0.0158 | 1.26% | +0.0034 |
+| Jun-Jul | 9,567 | 0.0131 | 0.0164 | 1.31% | -0.0093 |
+| Jul-Aug | 9,538 | 0.0163 | 0.0201 | 1.65% | -0.0176 |
+| Q3 replica (Aug-Sep) | 9,297 | 0.0137 | 0.0172 | 1.38% | -0.0106 |
+| Sep-Oct | 9,379 | 0.0137 | 0.0170 | 1.36% | +0.0113 |
+| **mean** | | **0.0139** | | **1.39%** | |
+
+Trained on 47,323 rows after removing 677 corrupted labels. In-sample residual sd 0.0145.
+
+### Sanity checks on the output
+
+| Check | Result |
+|---|---|
+| predicted rate distribution | median $2,072 vs $2,031 in training; p05/p95 $628/$4,985 vs $600/$4,954 |
+| predicted $/mi | median 2.177 vs 2.145 in training |
+| Dec vs Nov $/mi | 2.206 vs 2.146, i.e. +2.8%, the quarter-end ramp |
+| equipment premium, Nov (pre-ramp) | Flatbed +7.1%, Reefer +12.0% |
+| equipment premium, Dec (in ramp) | Flatbed +10.3%, Reefer +13.9% |
+| the 8 unseen cities | $/mi median 2.181 vs 2.177 for the rest, no outlier behaviour |
+| format | 12,000 unique ids, all positive, no NaN; scorer passes |
+
+The November and December equipment premia land on the values measured in section 6, which
+confirms the quarter-end interaction is being applied rather than merely declared.
+
+### The December chart
+
+$832 on Dec 1 rising to $885 on Dec 31, **+6.3%** across the month, with a weekly ripple from
+the `market_index` sawtooth. Close to the section 8b back-of-envelope of $837 to $900, and
+inside the $758-974 range of the 32 real Lexington to Fort Wayne loads in training.
+
+The line rises because December sits entirely inside the quarter-end ramp. A flat line would
+have meant the time structure was missed.
+
+---
+
 ## 9. Modelling decisions carried forward
 
-- [ ] **Drop `quote_signal`.** Not gated, not row-wise, dropped.
-- [ ] **Time-based split.** Use the Q2 and Q3 replicas (section 8), which reproduce the real
+- [x] **Drop `quote_signal`.** Not gated, not row-wise, dropped.
+- [x] **Time-based split.** Use the Q2 and Q3 replicas (section 8), which reproduce the real
       task's shape. Never random CV.
-- [ ] **Filter 677 corrupted labels** at 5 sigma before training.
-- [ ] **Repair on the inference path**: `abs()` on weight, same-day mean for `market_index`.
-- [ ] **Explicit calendar features**: day-of-quarter ramp, day-of-year trend, and the
+- [x] **Filter 677 corrupted labels** at 5 sigma before training.
+- [x] **Repair on the inference path**: `abs()` on weight, same-day mean for `market_index`.
+- [x] **Explicit calendar features**: day-of-quarter ramp, day-of-year trend, and the
       day-of-quarter by equipment interaction.
-- [ ] **Geography via lat/lon**, not city-name encodings. One symmetric city premium,
+- [x] **Geography via lat/lon**, not city-name encodings. One symmetric city premium,
       driven by latitude. Local interpolation recovers ~89% of it for unseen cities.
-- [ ] **Model `log(rate/mile)`**, not raw rate, given the multiplicative structure throughout.
-- [ ] **Structured model**: splines + shrunk city and lane effects + joint linear trend.
+- [x] **Model `log(rate/mile)`**, not raw rate, given the multiplicative structure throughout.
+- [x] **Structured model**: splines + shrunk city and lane effects + joint linear trend.
       The GBM stage is worth only ~1.4%. See section 8.
-- [ ] Validate the December curve is rising, roughly $840 to $900.
+- [x] Validate the December curve is rising, roughly $840 to $900.
 
 ## 10. Open questions
 
@@ -463,6 +504,9 @@ Caveat: the quarter-end ramp magnitude varies somewhat by quarter for Dry Van
 - **2026-09-01** Section 7 expanded: origin and destination premiums shown to be the same
   symmetric city effect (corr 0.992), driven by latitude alone; leave-one-city-out kNN
   quantifies what is recoverable for the 8 unseen cities.
+- **2026-09-02** Model built (`model.py`, `pipeline.py`, `gbm.py`). Both prediction files
+  written and the scorer passes. Backtest mean MAE 0.0139 (1.39% MAPE) over five folds.
+  December chart rises $832 to $885. Section 8c added.
 - **2026-09-02** Sections 8.3-8.6 added: structured model beats the plain hybrid by ~10%.
   Trend-window tuning and extra GBM capacity both tested and rejected; the GBM stage turns out
   to be worth only 1.4% once structure is explicit. Model is within ~20% of an optimistic
