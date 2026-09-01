@@ -473,6 +473,71 @@ have meant the time structure was missed.
 
 ---
 
+## 8d. Freight domain seasonality: produce season and retail peak
+
+Checked because the calendar work so far was mechanical (quarter-end, trend, weekly) and never
+tested the named industry seasons directly.
+
+### Spring produce season (Apr-Jul): present, and already captured
+
+`market_index` averaged by month over all 12 months:
+
+| Month | 1 | 2 | 3 | **4** | **5** | **6** | **7** | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| mean | 0.93 | 1.00 | 1.07 | **1.21** | **1.30** | **1.28** | **1.20** | 0.98 | 0.89 | 0.96 | 0.92 | 0.93 |
+
+Apr-Jul averages **1.248** against 0.944 for Aug-Oct. That is a textbook produce-season shape,
+peaking in exactly the window the season occupies.
+
+It needs no extra modelling, for two reasons: `market_index` is already a model feature, and
+its Nov-Dec values are **given** in `validation.csv`. The seasonal cycle arrives for free and
+never has to be forecast.
+
+### Retail peak (Aug-Oct): not present in this data
+
+Aug-Oct is the annual **trough** (0.944), not a peak. Whatever generated this dataset modelled
+a produce-driven cycle and not an import/holiday-driven one.
+
+### It does not act through equipment or region
+
+If a produce season were operating on top of the market-wide cycle, Reefer would be lifted in
+Apr-Jul. It is not. Premium relative to Dry Van, by month, after the model:
+
+| Equipment | Apr | May | Jun | Jul | vs Jan-Mar |
+|---|---|---|---|---|---|
+| Reefer | -0.0007 | +0.0004 | +0.0010 | -0.0009 | flat within 0.1% |
+| Flatbed | +0.0000 | +0.0009 | +0.0007 | -0.0002 | flat within 0.2% |
+
+Nor by region. Splitting origins into produce states, port cities and everything else, crossed
+with the three season blocks, the spread across all nine cells is **0.0022** against a model
+residual sd of 0.0145. Produce origins in Apr-Jul sit at +0.0010 versus +0.0002 for others.
+
+### Modelling the cycle explicitly makes it worse
+
+An annual sin/cos pair, the smooth extrapolable version of a seasonal cycle, was tested on the
+five rolling folds:
+
+| Fold | base | + annual harmonic |
+|---|---|---|
+| Q2 replica | 0.0129 | **0.0260** |
+| Jun-Jul | 0.0133 | 0.0132 |
+| Jul-Aug | 0.0166 | 0.0129 |
+| Q3 replica | 0.0136 | 0.0132 |
+| Sep-Oct | 0.0137 | **0.0233** |
+| **mean** | **0.0140** | **0.0177** |
+
+It helps on three folds and destroys two. Fitting an annual cycle from a partial year and
+extrapolating past the observed window is unstable, which is precisely the situation Nov-Dec
+puts us in. Rejected.
+
+### Leftover monthly wobble
+
+Residual month effects after the full model are real but tiny, at most 0.5% (Aug -0.0048,
+Oct +0.0057). The shape, a plateau through Aug-Sep then an October step, matches the
+trend misspecification noted in section 8.4 rather than any seasonal story.
+
+---
+
 ## 9. Modelling decisions carried forward
 
 - [x] **Drop `quote_signal`.** Not gated, not row-wise, dropped.
@@ -504,6 +569,10 @@ have meant the time structure was missed.
 - **2026-09-01** Section 7 expanded: origin and destination premiums shown to be the same
   symmetric city effect (corr 0.992), driven by latitude alone; leave-one-city-out kNN
   quantifies what is recoverable for the 8 unseen cities.
+- **2026-09-02** Section 8d added: tested the named freight seasons. Spring produce season is
+  present but arrives entirely through `market_index`, whose Nov-Dec values are given, so it
+  needs no modelling. Retail peak is absent (Aug-Oct is the trough). No equipment or region
+  interaction. An explicit annual harmonic was tested and rejected as unstable.
 - **2026-09-02** Model built (`model.py`, `pipeline.py`, `gbm.py`). Both prediction files
   written and the scorer passes. Backtest mean MAE 0.0139 (1.39% MAPE) over five folds.
   December chart rises $832 to $885. Section 8c added.
