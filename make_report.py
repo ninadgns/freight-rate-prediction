@@ -23,6 +23,7 @@ from docx.shared import Inches, Pt, RGBColor
 OUT_DOCX = Path("report/Freight_Rate_Report.docx")
 TEAL = RGBColor(0x06, 0x4A, 0x56)
 GREY = RGBColor(0x45, 0x5A, 0x60)
+INK = RGBColor(0x1B, 0x1B, 0x1B)
 
 BACKTEST = [
     ("Q2 replica (May-Jun)", "9,571", "0.0126", "0.0158", "1.26%"),
@@ -122,7 +123,22 @@ def build():
 
     h = doc.add_heading("Freight Rate Prediction", level=0)
     h.runs[0].font.color.rgb = TEAL
-    para(doc, "Spotter Machine Learning Engineer assessment", italic=True, color=GREY)
+    para(doc, "Spotter Machine Learning Engineer assessment", italic=True, color=GREY, after=10)
+    q = doc.add_paragraph()
+    r = q.add_run("Muhaiminul Islam Ninad")
+    r.font.size, r.font.bold, r.font.color.rgb = Pt(11.5), True, INK
+    r = q.add_run("   ninadgns@gmail.com")
+    r.font.size, r.font.color.rgb = Pt(10), GREY
+    q.paragraph_format.space_after = Pt(3)
+    for label, url in (("Repository", "https://github.com/ninadgns/freight-rate-prediction"),
+                       ("Walkthrough",
+                        "https://www.loom.com/share/e8ee8f8b14d24f43b23024d2ccd538ba")):
+        q = doc.add_paragraph()
+        a = q.add_run(f"{label}:  ")
+        a.font.size, a.font.color.rgb = Pt(10), GREY
+        b = q.add_run(url)
+        b.font.size, b.font.color.rgb = Pt(10), TEAL
+        q.paragraph_format.space_after = Pt(1)
 
     # ---------------------------------------------------------------- summary
     doc.add_heading("Summary", level=1)

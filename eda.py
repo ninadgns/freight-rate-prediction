@@ -197,7 +197,7 @@ def fig_geo_and_december(train, val, resid):
 
 
 def fig_equipment_ramp(train, val):
-    """The equipment premium is flat for 60 days then ramps to quarter end.
+    """The equipment premium is flat for two months then ramps to quarter end.
 
     December is the only quarter-end month with no labels, so this interaction has
     to be extrapolated rather than learned in place.
@@ -222,8 +222,8 @@ def fig_equipment_ramp(train, val):
                    core.loc[m, "prem"].groupby(b[m], observed=False).mean(),
                    marker="o", color=c, label=eq)
     ax[0].axvspan(60, 92, color="#C2453B", alpha=0.08)
-    ax[0].set(title="equipment premium is flat for 60 days,\nthen ramps into quarter end",
-              xlabel="day of quarter", ylabel="premium over Dry Van (log)")
+    ax[0].set(title="equipment premium is flat for two months,\nthen ramps through the final one",
+              xlabel="days into the quarter", ylabel="premium over Dry Van (log)")
     ax[0].legend(fontsize=8)
 
     # Q4's ramp region is exactly December, and it carries no labels.
@@ -233,7 +233,7 @@ def fig_equipment_ramp(train, val):
         ax[1].scatter(d["doq"], d["date"].dt.quarter, s=2, color=c, marker=m, label=src)
     ax[1].axvspan(60, 92, color="#C2453B", alpha=0.08)
     ax[1].set(title="the ramp is only ever labelled in Q1-Q3;\nQ4's ramp is December",
-              xlabel="day of quarter", ylabel="quarter", yticks=[1, 2, 3, 4])
+              xlabel="days into the quarter", ylabel="quarter", yticks=[1, 2, 3, 4])
     ax[1].legend(fontsize=8, markerscale=4)
     fig.tight_layout()
     fig.savefig(OUT / "05_equipment_quarter_end.png", dpi=140)
