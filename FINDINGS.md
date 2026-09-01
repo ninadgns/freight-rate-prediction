@@ -3,7 +3,7 @@
 Working notes for the Spotter ML assessment. Appended to as work proceeds.
 Everything here is reproducible with `python eda.py` (figures land in `eda_out/`).
 
-**Status:** Model built and both prediction files generated. Report and Loom outstanding.
+**Status:** Model built, both prediction files generated, report written. Loom outstanding.
 **Last updated:** 2026-09-02
 
 ---
@@ -569,6 +569,8 @@ trend misspecification noted in section 8.4 rather than any seasonal story.
 - **2026-09-01** Section 7 expanded: origin and destination premiums shown to be the same
   symmetric city effect (corr 0.992), driven by latitude alone; leave-one-city-out kNN
   quantifies what is recoverable for the 8 unseen cities.
+- **2026-09-02** Report written to `report/Freight_Rate_Report.{docx,pdf}` via
+  `make_report.py`, covering the split, both traps, the model and the December chart.
 - **2026-09-02** Section 8d added: tested the named freight seasons. Spring produce season is
   present but arrives entirely through `market_index`, whose Nov-Dec values are given, so it
   needs no modelling. Retail peak is absent (Aug-Oct is the trough). No equipment or region

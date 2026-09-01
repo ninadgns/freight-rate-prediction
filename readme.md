@@ -22,11 +22,16 @@ python score.py --predictions validation_predictions.csv \
 `december-chart-inputs.csv`. `score.py` validates both and writes
 `scorer_results/candidate_december.png`.
 
-To regenerate the exploratory figures in `eda_out/`:
+To regenerate the exploratory figures in `eda_out/`, and to rebuild the report:
 
 ```bash
 python eda.py
+python make_report.py     # writes report/Freight_Rate_Report.{docx,pdf}
 ```
+
+The submission report is **[report/Freight_Rate_Report.pdf](report/Freight_Rate_Report.pdf)**
+(also as `.docx`). It covers the validation approach and split, both data traps, the model,
+and the December chart.
 
 ## Results
 
@@ -92,6 +97,8 @@ model.py          entry point: backtest, fit, write both prediction files
 pipeline.py       cleaning, features, the model
 gbm.py            minimal histogram gradient booster (numpy only)
 eda.py            exploratory analysis, writes eda_out/
+make_report.py    builds the submission report as DOCX and PDF
 experiments/      model selection: architecture, trend handling, replica splits
+report/           the submission report
 FINDINGS.md       full analysis and the evidence for every decision
 ```
