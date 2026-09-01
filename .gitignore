@@ -1,8 +1,17 @@
+# Provided by Spotter with the assessment, not redistributed here.
+# Place these in the repo root before running (see readme).
+train-test.csv
+validation.csv
+validation-predictions-template.csv
+freight-rate-ml-assessment.pdf
+
+# Personal delivery notes, not part of the submission
+report/loom_script.md
+
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .venv/
-
 .vscode/
 .~lock.*#
 *.tmp

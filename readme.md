@@ -9,6 +9,18 @@ Full analysis and the reasoning behind every modelling decision is in **[FINDING
 
 Requires Python 3.10+. No dependencies beyond the three the provided scorer already needs.
 
+The assessment's own data files are not committed here. Copy these four from the assessment
+bundle into the repository root first:
+
+```
+train-test.csv
+validation.csv
+validation-predictions-template.csv
+december-chart-inputs.csv        (already present, with predictions filled in)
+```
+
+Then:
+
 ```bash
 python -m pip install -r requirements.txt
 
